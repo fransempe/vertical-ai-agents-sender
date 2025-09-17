@@ -65,6 +65,21 @@ async def root():
 async def health_check():
     return {"status": "healthy", "message": "API funcionando correctamente"}
 
+@app.get("/test-endpoints")
+async def test_endpoints():
+    """Endpoint para verificar que todos los endpoints estén disponibles"""
+    return {
+        "message": "Todos los endpoints están disponibles",
+        "available_endpoints": [
+            {"method": "POST", "path": "/send-email", "description": "Envía emails con opciones avanzadas"},
+            {"method": "POST", "path": "/send-simple-email", "description": "Envía un email simple"},
+            {"method": "POST", "path": "/send-email-with-attachment", "description": "Envía email con archivo adjunto"},
+            {"method": "POST", "path": "/send_via_sendgrid_api", "description": "Envía email usando SendGrid API"},
+            {"method": "GET", "path": "/health", "description": "Verificar estado de la API"},
+            {"method": "GET", "path": "/test-endpoints", "description": "Lista todos los endpoints disponibles"}
+        ]
+    }
+
 @app.post("/send-email", response_model=EmailResponse)
 async def send_email(email_request: EmailRequest):
     """
@@ -216,8 +231,7 @@ if __name__ == "__main__":
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))
     
-    uvicorn.run(app, host="0.0.0.0", port=8004)
     print(f"Iniciando servidor en http://{host}:{port}")
     print("Documentación disponible en: http://localhost:8000/docs")
-
-    uvicorn.run(app, host="0.0.0.0", port=8004)
+    
+    uvicorn.run(app, host=host, port=port)

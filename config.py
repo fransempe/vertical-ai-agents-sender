@@ -11,6 +11,7 @@ class Config:
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
     SENDER_EMAIL = os.getenv("SENDER_EMAIL")
     SENDER_NAME = os.getenv("SENDER_NAME", "Email Sender API")
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     
     # Configuración API
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
@@ -22,7 +23,8 @@ class Config:
         required_vars = [
             ("SMTP_USERNAME", cls.SMTP_USERNAME),
             ("SMTP_PASSWORD", cls.SMTP_PASSWORD),
-            ("SENDER_EMAIL", cls.SENDER_EMAIL)
+            ("SENDER_EMAIL", cls.SENDER_EMAIL),
+            ("SENDGRID_API_KEY", cls.SENDGRID_API_KEY)
         ]
         
         missing_vars = []

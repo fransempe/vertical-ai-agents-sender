@@ -11,13 +11,14 @@ import logging
 import requests
 
 class EmailService:
-    def __init__(self, smtp_server: str, smtp_port: int, username: str, password: str, sender_email: str, sender_name: str):
+    def __init__(self, smtp_server: str, smtp_port: int, username: str, password: str, sender_email: str, sender_name: str, sendgrid_api_key: str):
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
         self.username = username
         self.password = password
         self.sender_email = sender_email
         self.sender_name = sender_name
+        self.sendgrid_api_key = sendgrid_api_key
         
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
@@ -225,18 +226,29 @@ class EmailService:
     
     def send_via_sendgrid_api(
         self,
-        to_emails: List[str],
+        to_email: str,
         subject: str,
         body: str,
         is_html: bool = False
     ) -> dict:
         """Alternativa usando SendGrid API cuando SMTP falla"""
-        api_key = os.getenv('SENDGRID_API_KEY')
+        api_key = self.sendgrid_api_key
         
         if not api_key:
             return {
                 "status": "error",
-                "message": "SENDGRID_API_KEY no configurado. Configúralo en Railway para usar esta alternativa."
+                "error_type": "config_missing",
+                "message": "SENDGRID_API_KEY no configurado. Configúralo en Railway para usar esta alternativa.",
+                "solution": "Agrega SENDGRID_API_KEY en Railway → Settings → Variables"
+            }
+        
+        # Verificar que el email remitente esté configurado
+        if not self.sender_email:
+            return {
+                "status": "error",
+                "error_type": "sender_missing",
+                "message": "EMAIL_FROM no configurado",
+                "solution": "Configura EMAIL_FROM en las variables de entorno"
             }
         
         try:
@@ -251,7 +263,7 @@ class EmailService:
             
             data = {
                 "personalizations": [{
-                    "to": [{"email": email} for email in to_emails]
+                    "to": [{"email": to_email}]
                 }],
                 "from": {
                     "email": self.sender_email,
@@ -264,25 +276,114 @@ class EmailService:
                 }]
             }
             
+            self.logger.info(f"Enviando email via SendGrid API de {self.sender_email} a {to_email}")
             response = requests.post(url, headers=headers, json=data)
             
             if response.status_code == 202:
-                self.logger.info(f"Email enviado via SendGrid API a {len(to_emails)} destinatarios")
+                self.logger.info(f"Email enviado exitosamente via SendGrid API a {to_email}")
                 return {
                     "status": "success",
-                    "message": f"Email enviado via SendGrid API a {len(to_emails)} destinatarios",
-                    "method": "sendgrid_api"
+                    "message": f"Email enviado via SendGrid API a {to_email}",
+                    "method": "sendgrid_api",
+                    "recipient": to_email
                 }
+            elif response.status_code == 401:
+                return {
+                    "status": "error",
+                    "error_type": "authentication",
+                    "message": "API Key de SendGrid inválida",
+                    "solution": "Verifica que SENDGRID_API_KEY sea correcta en Railway"
+                }
+            elif response.status_code == 403:
+                try:
+                    error_data = response.json()
+                    errors = error_data.get('errors', [])
+                    
+                    # Verificar si es problema de identidad del remitente
+                    sender_identity_error = any(
+                        'sender identity' in error.get('message', '').lower() or
+                        'from address' in error.get('message', '').lower()
+                        for error in errors
+                    )
+                    
+                    if sender_identity_error:
+                        return {
+                            "status": "error",
+                            "error_type": "sender_not_verified",
+                            "message": f"El email {self.sender_email} no está verificado en SendGrid",
+                            "sendgrid_errors": errors,
+                            "solution": {
+                                "step_1": "Ve a https://app.sendgrid.com/settings/sender_auth",
+                                "step_2": "Click en 'Verify a Single Sender'",
+                                "step_3": f"Verifica el email: {self.sender_email}",
+                                "step_4": "Revisa tu email y confirma la verificación",
+                                "step_5": "Asegúrate de que EMAIL_FROM coincida exactamente con el email verificado"
+                            }
+                        }
+                    else:
+                        return {
+                            "status": "error",
+                            "error_type": "forbidden",
+                            "message": "Acceso denegado por SendGrid",
+                            "sendgrid_errors": errors,
+                            "response_code": response.status_code
+                        }
+                except:
+                    return {
+                        "status": "error",
+                        "error_type": "forbidden",
+                        "message": f"SendGrid API error 403: {response.text}",
+                        "solution": "Verifica la configuración de SendGrid Sender Authentication"
+                    }
+            elif response.status_code == 400:
+                try:
+                    error_data = response.json()
+                    return {
+                        "status": "error",
+                        "error_type": "bad_request",
+                        "message": "Error en los datos enviados a SendGrid",
+                        "sendgrid_errors": error_data.get('errors', []),
+                        "sent_data": {
+                            "from": self.sender_email,
+                            "to": to_email,
+                            "subject": subject
+                        }
+                    }
+                except:
+                    return {
+                        "status": "error",
+                        "error_type": "bad_request",
+                        "message": f"SendGrid API error 400: {response.text}"
+                    }
             else:
                 return {
                     "status": "error",
-                    "message": f"SendGrid API error: {response.status_code} - {response.text}"
+                    "error_type": f"api_error_{response.status_code}",
+                    "message": f"SendGrid API error: {response.status_code}",
+                    "response": response.text[:500] if len(response.text) > 500 else response.text
                 }
-                
-        except Exception as e:
+            
+        except requests.exceptions.ConnectionError as e:
             return {
                 "status": "error",
-                "message": f"Error con SendGrid API: {str(e)}"
+                "error_type": "connection_error",
+                "message": "No se pudo conectar a SendGrid API",
+                "details": str(e),
+                "solution": "Verifica la conexión a internet desde Railway"
+            }
+        except requests.exceptions.Timeout as e:
+            return {
+                "status": "error",
+                "error_type": "timeout",
+                "message": "Timeout conectando a SendGrid API",
+                "details": str(e)
+            }
+        except Exception as e:
+            self.logger.error(f"Error inesperado con SendGrid API: {str(e)}")
+            return {
+                "status": "error",
+                "error_type": "unexpected_error",
+                "message": f"Error inesperado con SendGrid API: {str(e)}"
             }
     
     def send_email_with_api_fallback(

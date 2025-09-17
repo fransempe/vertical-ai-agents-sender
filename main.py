@@ -43,17 +43,19 @@ def get_email_service():
         username=os.getenv("SMTP_USERNAME"),
         password=os.getenv("SMTP_PASSWORD"),
         sender_email=os.getenv("SENDER_EMAIL"),
-        sender_name=os.getenv("SENDER_NAME", "Email Sender API")
+        sender_name=os.getenv("SENDER_NAME", "Email Sender API"),
+        sendgrid_api_key=os.getenv("SENDGRID_API_KEY")
     )
 
 @app.get("/")
 async def root():
     return {
-        "message": "Email Sender API",
+        "message": "Email Sender API -",
         "version": "1.0.0",
         "endpoints": [
             "/send-email - POST: Envía emails con opciones avanzadas",
             "/send-simple-email - POST: Envía un email simple",
+            "/send-email-with-api-fallback - POST: Envía un email con opciones avanzadas usando SendGrid API como fallback",
             "/health - GET: Verificar estado de la API"
         ]
     }
@@ -85,6 +87,35 @@ async def send_email(email_request: EmailRequest):
             is_html=email_request.is_html
         )
         
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+        
+        return EmailResponse(**result)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    
+@app.post("/send_via_sendgrid_api", response_model=EmailResponse)
+async def send_via_sendgrid_api(email_request: SimpleEmailRequest):
+    """
+    Envía un email con opciones avanzadas (CC, BCC, HTML) usando SendGrid API como fallback
+    """
+    try:
+        email_service = get_email_service()
+        print("SENDGRID_API_KEY: ", email_service.sendgrid_api_key)
+        if not email_service.sendgrid_api_key:  
+            raise HTTPException(
+                status_code=500, 
+                detail="SENDGRID_API_KEY no configurado. Verifica las variables de entorno."
+            )
+        
+        result = email_service.send_via_sendgrid_api(
+            to_email=email_request.to_email,  
+            subject=email_request.subject,    
+            body=email_request.body,
+        )
+        
+        print("RESULT: ", result)
         if result["status"] == "error":
             raise HTTPException(status_code=500, detail=result["message"])
         

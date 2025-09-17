@@ -56,7 +56,8 @@ async def root():
             "/send-email - POST: Envía emails con opciones avanzadas",
             "/send-simple-email - POST: Envía un email simple",
             "/send-email-with-api-fallback - POST: Envía un email con opciones avanzadas usando SendGrid API como fallback",
-            "/health - GET: Verificar estado de la API"
+            "/health - GET: Verificar estado de la API",
+            "/send_via_sendgrid_api - POST: Envía un email con opciones avanzadas usando SendGrid API como fallback"
         ]
     }
 
